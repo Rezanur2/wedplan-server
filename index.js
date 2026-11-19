@@ -23,6 +23,16 @@ export async function connectToMongoDB() {
   }
 }
 const connectedClient = await connectToMongoDB();
+// DB Collections
+const database = connectedClient.db("wedplandb");
+const users = database.collection("user");
+
+// Get all users
+app.get('/users', async(req, res) => {
+    const cursor = users.find({});
+    const result = await cursor.toArray();
+    res.send(result);
+})
 
 app.get('/', (req, res) => {
     res.send('Hello from WedPlan Server');
