@@ -26,12 +26,20 @@ const connectedClient = await connectToMongoDB();
 // DB Collections
 const database = connectedClient.db("wedplandb");
 const users = database.collection("user");
+const services = database.collection("services");
 
 // Get all users
 app.get('/users', async(req, res) => {
     const cursor = users.find({});
     const result = await cursor.toArray();
     res.send(result);
+})
+
+// Post Services 
+app.post('/services', async(req, res) => {
+  const service = req.body;
+  const result = await services.insertOne(service);
+  res.send(result);
 })
 
 app.get('/', (req, res) => {
