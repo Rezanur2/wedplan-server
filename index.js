@@ -36,9 +36,42 @@ app.get('/users', async(req, res) => {
 })
 
 // Service Related APIs
+// 1. Get Public Services (Browse Services - filtered by search, category, location, and sort)
+app.get('/services', async (req, res) => {
+  const query = {};
+  console.log('Public services query:', req.query);
+
+  if (req.query) {
+    if (req.query.category && req.query.category !== 'All' && req.query.category !== 'All Categories') {
+      query.category = req.query.category;
+    }
+    if (req.query.location) {
+      query.location = { $regex: req.query.location, $options: 'i' };
+    }
+    if (req.query.search) {
+      query.$or = [
+        { serviceName: { $regex: req.query.search, $options: 'i' } },
+        { title: { $regex: req.query.search, $options: 'i' } },
+        { name: { $regex: req.query.search, $options: 'i' } },
+        { category: { $regex: req.query.search, $options: 'i' } },
+        { location: { $regex: req.query.search, $options: 'i' } },
+        { description: { $regex: req.query.search, $options: 'i' } },
+      ];
+    }
+  }
+  let sortOption = {};
+  if (req.query.sort === 'price-low') {
+    sortOption = { price: 1 };
+  } else if (req.query.sort === 'price-high') {
+    sortOption = { price: -1 };
+  }
+  const cursor = services.find(query).sort(sortOption);
+  const result = await cursor.toArray();
+  res.send(result);
+});
 
 // Get Services (vendor-filtered)
-app.get('/services', async (req, res) => {
+app.get('/my-services', async (req, res) => {
     const { vendorId } = req.query;
     const query = vendorId ? { vendorId } : {};
     const result = await services.find(query).toArray();
