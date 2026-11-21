@@ -114,6 +114,26 @@ app.delete('/services/:id', async(req, res) => {
   res.send(result);
 })
 
+// Update / Edit Service With Error Handling
+app.patch('/services/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid service ID" });
+    }
+    const updateData = req.body;
+    delete updateData._id;
+
+    const query = { _id: new ObjectId(id) };
+    const result = await services.updateOne(query, { $set: updateData });
+    res.send(result);
+  } catch (error) {
+    console.error("Error updating service:", error);
+    res.status(500).send({ message: "Failed to update service" });
+  }
+});
+
+
 app.get('/', (req, res) => {
     res.send('Hello from WedPlan Server');
 })
