@@ -35,6 +35,16 @@ app.get('/users', async(req, res) => {
     res.send(result);
 })
 
+// Service Related APIs
+
+// Get Services (vendor-filtered)
+app.get('/services', async (req, res) => {
+    const { vendorId } = req.query;
+    const query = vendorId ? { vendorId } : {};
+    const result = await services.find(query).toArray();
+    res.send(result);
+})
+
 // Post Services 
 app.post('/services', async(req, res) => {
   const service = req.body;
