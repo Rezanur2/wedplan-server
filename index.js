@@ -36,10 +36,11 @@ app.get('/users', async(req, res) => {
 })
 
 // Service Related APIs
-// 1. Get Public Services (Browse Services - filtered by search, category, location, and sort)
+// Get Public Services (Browse Services - filtered by search, category, location, and sort) & pending status filter
 app.get('/services', async (req, res) => {
-  const query = {};
-  console.log('Public services query:', req.query);
+  const query = {
+    status: { $nin: ["Pending", "pending", "Rejected", "rejected"] },
+  };
 
   if (req.query) {
     if (req.query.category && req.query.category !== 'All' && req.query.category !== 'All Categories') {
@@ -68,6 +69,26 @@ app.get('/services', async (req, res) => {
   const cursor = services.find(query).sort(sortOption);
   const result = await cursor.toArray();
   res.send(result);
+});
+
+
+// Get Service Details With Error Handling
+app.get('/services/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid service ID" });
+    }
+    const query = { _id: new ObjectId(id) };
+    const result = await services.findOne(query);
+    if (!result) {
+      return res.status(404).send({ message: "Service not found" });
+    }
+    res.send(result);
+  } catch (error) {
+    console.error("Error fetching service details:", error);
+    res.status(500).send({ message: "Failed to fetch service" });
+  }
 });
 
 // Get Services (vendor-filtered)
