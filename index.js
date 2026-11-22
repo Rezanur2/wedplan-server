@@ -56,7 +56,7 @@ app.post('/bookings', async (req, res) => {
     const alreadyBooked = await bookings.findOne(query);
 
     if (alreadyBooked) {
-      return res.status(400).send({ message: "This service is already booked" });
+      return res.status(400).send({ message: "This date is already booked for this service" });
     }
 
     bookingData.createdAt = new Date();
@@ -70,8 +70,40 @@ app.post('/bookings', async (req, res) => {
 });
 
 
+// Get Bookings (Customer & Vendor filtered, newest first)
+app.get('/bookings', async (req, res) => {
+  const { email, customerEmail, vendorEmail } = req.query;
+  const query = {};
 
+  if (email || customerEmail) {
+    query.customerEmail = email || customerEmail;
+  }
+  if (vendorEmail) {
+    query.vendorEmail = vendorEmail;
+  }
 
+  const cursor = bookings.find(query).sort({ _id: -1 });
+  const result = await cursor.toArray();
+  res.send(result);
+});
+
+// Update / Cancel Booking Status
+app.patch('/bookings/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid booking ID" });
+    }
+    const { status } = req.body;
+    const query = { _id: new ObjectId(id) };
+
+    const result = await bookings.updateOne(query, { $set: { status } });
+    res.send(result);
+  } catch (error) {
+    console.error("Error updating booking:", error);
+    res.status(500).send({ message: "Failed to update booking status" });
+  }
+});
 
 // Service Related APIs
 // Get Public Services (Browse Services - filtered by search, category, location, and sort) & pending status filter
