@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import 'dotenv/config'
 import { MongoClient, ObjectId } from 'mongodb';
+import Stripe from 'stripe';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -28,12 +31,20 @@ const database = connectedClient.db("wedplandb");
 const users = database.collection("user");
 const services = database.collection("services");
 const bookings = database.collection("bookings");
+const transactions = database.collection("transactions");
 
 // Get all users
 app.get('/users', async(req, res) => {
     const cursor = users.find({});
     const result = await cursor.toArray();
     res.send(result);
+})
+
+app.get('/users/:id/premium', async (req, res) => {
+  const id = req.params.id;
+  const query = ObjectId.isValid(id) ? { _id: new ObjectId(id) } : { _id: id };
+  const result = await users.findOne(query, { projection: { premium: 1 } });
+  res.send(result);
 })
 
 
@@ -214,6 +225,79 @@ app.patch('/services/:id', async (req, res) => {
   } catch (error) {
     console.error("Error updating service:", error);
     res.status(500).send({ message: "Failed to update service" });
+  }
+});
+
+// Payments related APIs
+app.post('/transactions/checkout-verify', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+
+    if (!sessionId) {
+      return res.status(400).send({ success: false, message: 'Session ID is required' });
+    }
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const {
+      status,
+      payment_status,
+      customer_email,
+      metadata,
+      payment_intent,
+    } = session;
+
+    if (status === "complete" && payment_status === "paid") {
+      const sessionQuery = { sessionId };
+      const existingPayment = await transactions.findOne(sessionQuery);
+      if (existingPayment) {
+        console.log("Duplicate check: Payment already verified for sessionId:", sessionId);
+        return res.send({ success: false, message: 'Payment already verified' });
+      }
+
+      const transactionId =
+        typeof payment_intent === "object" && payment_intent !== null
+          ? payment_intent.id
+          : typeof payment_intent === "string"
+          ? payment_intent
+          : sessionId;
+
+      const transaction = {
+        sessionId,
+        transactionId,
+        status,
+        payment_status,
+        customer_email,
+        userId: metadata?.userId,
+        amount: session.amount_total ? session.amount_total / 100 : 49,
+        currency: session.currency || "usd",
+        plan: "Premium Vendor (Lifetime)",
+        payment_date: new Date(),
+        payment_intent,
+      };
+
+      const result = await transactions.insertOne(transaction);
+
+      // update the user subscription status in user collection
+      const userId = metadata?.userId;
+      if (userId) {
+        const query = ObjectId.isValid(userId) ? { _id: new ObjectId(userId) } : { _id: userId };
+        const updateDoc = {
+          $set: {
+            subscriptionPlan: 'premium',
+            premium: true,
+          },
+        };
+        const updateResult = await users.updateOne(query, updateDoc);
+        return res.send({ success: true, result, updateResult });
+      }
+
+      return res.send({ success: true, result });
+    }
+
+    res.status(400).send({ success: false, message: 'Payment verification failed' });
+  } catch (error) {
+    console.error("Error verifying checkout session:", error);
+    res.status(500).send({ success: false, message: error.message });
   }
 });
 
