@@ -27,6 +27,7 @@ const connectedClient = await connectToMongoDB();
 const database = connectedClient.db("wedplandb");
 const users = database.collection("user");
 const services = database.collection("services");
+const bookings = database.collection("bookings");
 
 // Get all users
 app.get('/users', async(req, res) => {
@@ -34,6 +35,43 @@ app.get('/users', async(req, res) => {
     const result = await cursor.toArray();
     res.send(result);
 })
+
+
+// Bookings Related APIs
+// Post Bookings
+app.post('/bookings', async (req, res) => {
+  try {
+    const bookingData = req.body;
+
+    // Prevent customers booking own services
+    if (bookingData.customerEmail === bookingData.vendorEmail) {
+      return res.status(400).send({ message: "You cannot book your own service" });
+    }
+
+    // Prevent duplicate booking requests
+    const query = {
+      serviceId: bookingData.serviceId,
+      eventDate: bookingData.eventDate,
+    };
+    const alreadyBooked = await bookings.findOne(query);
+
+    if (alreadyBooked) {
+      return res.status(400).send({ message: "This service is already booked" });
+    }
+
+    bookingData.createdAt = new Date();
+    bookingData.status = bookingData.status || "Pending";
+    const result = await bookings.insertOne(bookingData);
+    res.send(result);
+  } catch (error) {
+    console.error("Error creating booking:", error);
+    res.status(500).send({ message: "Failed to create booking" });
+  }
+});
+
+
+
+
 
 // Service Related APIs
 // Get Public Services (Browse Services - filtered by search, category, location, and sort) & pending status filter
