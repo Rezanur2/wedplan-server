@@ -141,6 +141,20 @@ app.get('/services', async (req, res) => {
   res.send(result);
 });
 
+// Get Services Count (all or filtered by vendorId)
+app.get('/services/count', async (req, res) => {
+  try {
+    const query = {};
+    if (req.query.vendorId) {
+      query.vendorId = req.query.vendorId;
+    }
+    const result = await services.countDocuments(query);
+    res.send({ count: result });
+  } catch (error) {
+    console.error("Error counting services:", error);
+    res.status(500).send({ count: 0, message: "Failed to count services" });
+  }
+});
 
 // Get Service Details With Error Handling
 app.get('/services/:id', async (req, res) => {
