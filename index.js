@@ -83,7 +83,7 @@ app.post('/bookings', async (req, res) => {
 
 // Get Bookings (Customer & Vendor filtered, newest first)
 app.get('/bookings', async (req, res) => {
-  const { email, customerEmail, vendorEmail } = req.query;
+  const { email, customerEmail, vendorEmail, vendorId, serviceId } = req.query;
   const query = {};
 
   if (email || customerEmail) {
@@ -91,6 +91,12 @@ app.get('/bookings', async (req, res) => {
   }
   if (vendorEmail) {
     query.vendorEmail = vendorEmail;
+  }
+  if (vendorId) {
+    query.vendorId = vendorId;
+  }
+  if (serviceId) {
+    query.serviceId = serviceId;
   }
 
   const cursor = bookings.find(query).sort({ _id: -1 });
@@ -188,11 +194,13 @@ app.get('/services/:id', async (req, res) => {
 
 // Get Services (vendor-filtered)
 app.get('/my-services', async (req, res) => {
-    const { vendorId } = req.query;
-    const query = vendorId ? { vendorId } : {};
-    const result = await services.find(query).toArray();
-    res.send(result);
-})
+  const query = {};
+  if (req.query.vendorId) {
+    query.vendorId = req.query.vendorId;
+  }
+  const result = await services.find(query).sort({ _id: -1 }).toArray();
+  res.send(result);
+});
 
 // Post Services 
 app.post('/services', async(req, res) => {
