@@ -29,12 +29,74 @@ const connectedClient = await connectToMongoDB();
 // DB Collections
 const database = connectedClient.db("wedplandb");
 const users = database.collection("user");
+const sessions = database.collection("session");
 const services = database.collection("services");
 const bookings = database.collection("bookings");
 const transactions = database.collection("transactions");
 
+
+const verifyToken = async(req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    res.status(401).send({ message: 'Unauthorized' });
+    return;
+  }
+  const token = authHeader.split(' ')[1];
+  if (!token) {
+    res.status(401).send({ message: 'Unauthorized' });
+    return;
+  }
+  const query = { token };
+  const session = await sessions.findOne(query);
+  if (!session) {
+    res.status(401).send({ message: 'Unauthorized' });
+    return;
+  }
+
+  const userId = session.userId;
+
+  const userQuery = { _id: new ObjectId(userId) };
+  const user = await users.findOne(userQuery);
+  if (!user) {
+    res.status(401).send({ message: 'Unauthorized' });
+    return;
+  }
+  req.user = user;
+
+  next();
+}
+
+
+// verify Customer
+const verifyCustomer = (req, res, next) => {
+    if (req.user?.role !== "customer") {
+      res.status(403).send({ message: "Forbidden" });
+      return;
+    }
+    next();
+};
+
+// verify Vendor
+const verifyVendor = (req, res, next) => {
+    if (req.user?.role !== "vendor") {
+      res.status(403).send({ message: "Forbidden" });
+      return;
+    }
+    next();
+};
+
+
+// verify Admin
+const verifyAdmin = (req, res, next) => {
+    if (req.user?.role !== "admin") {
+      res.status(403).send({ message: "Forbidden" });
+      return;
+    }
+    next();
+};
+
 // Get all users
-app.get('/users', async(req, res) => {
+app.get('/users', verifyToken, verifyAdmin, async(req, res) => {
     const cursor = users.find({});
     const result = await cursor.toArray();
     res.send(result);
@@ -49,7 +111,7 @@ app.get('/users/:id/premium', async (req, res) => {
 })
 
 // Update Users Role
-app.patch('/users/:id/role', async(req, res) => {
+app.patch('/users/:id/role', verifyToken, verifyAdmin,async(req, res) => {
   const id = req.params.id;
   const query = { _id: new ObjectId(id) };
   const updatedDoc = {
@@ -64,7 +126,7 @@ app.patch('/users/:id/role', async(req, res) => {
 
 // Bookings Related APIs
 // Post Bookings
-app.post('/bookings', async (req, res) => {
+app.post('/bookings', verifyToken, verifyCustomer, async (req, res) => {
   try {
     const bookingData = req.body;
 
@@ -95,31 +157,39 @@ app.post('/bookings', async (req, res) => {
 });
 
 
-// Get Bookings (Customer & Vendor filtered, newest first)
-app.get('/bookings', async (req, res) => {
-  const { email, customerEmail, vendorEmail, vendorId, serviceId } = req.query;
+// Get Bookings 
+app.get('/bookings', verifyToken, async (req, res) => {
   const query = {};
 
-  if (email || customerEmail) {
-    query.customerEmail = email || customerEmail;
-  }
-  if (vendorEmail) {
-    query.vendorEmail = vendorEmail;
-  }
-  if (vendorId) {
-    query.vendorId = vendorId;
-  }
-  if (serviceId) {
-    query.serviceId = serviceId;
+  if (req.query.email || req.query.customerEmail) {
+    query.customerEmail = req.query.email || req.query.customerEmail;
   }
 
+  if (req.query.vendorId) {
+    query.vendorId = req.query.vendorId;
+  }
+  if (req.query.serviceId) {
+    const serviceQuery = { _id: new ObjectId(req.query.serviceId) };
+    const service = await services.findOne(serviceQuery);
+
+    if (!service) {
+      return res.status(404).send({ message: 'Service not found' });
+    }
+    
+    if (service.vendorId !== req.user._id.toString() && req.user.role !== 'admin') {
+      res.status(403).send({ message: 'Forbidden' });
+      return;
+    }
+    
+    query.serviceId = req.query.serviceId;
+  }
   const cursor = bookings.find(query).sort({ _id: -1 });
   const result = await cursor.toArray();
   res.send(result);
 });
 
 // Update / Cancel Booking Status
-app.patch('/bookings/:id', async (req, res) => {
+app.patch('/bookings/:id', verifyToken, async (req, res) => {
   try {
     const id = req.params.id;
     if (!ObjectId.isValid(id)) {
@@ -206,7 +276,7 @@ app.get('/services/:id', async (req, res) => {
   }
 });
 
-// Get Services (vendor-filtered)
+// Get Services (vendor-filtered)   
 app.get('/my-services', async (req, res) => {
   const query = {};
   if (req.query.vendorId) {
@@ -217,14 +287,14 @@ app.get('/my-services', async (req, res) => {
 });
 
 // Post Services 
-app.post('/services', async(req, res) => {
+app.post('/services', verifyToken, verifyVendor, async(req, res) => {
   const service = req.body;
   const result = await services.insertOne(service);
   res.send(result);
 })
 
 // Delete Service
-app.delete('/services/:id', async(req, res) => {
+app.delete('/services/:id', verifyToken, verifyVendor, async(req, res) => {
   const id = req.params.id;
   const query = { _id: new ObjectId(id) };
   const result = await services.deleteOne(query);
@@ -232,7 +302,7 @@ app.delete('/services/:id', async(req, res) => {
 })
 
 // Update / Edit Service With Error Handling
-app.patch('/services/:id', async (req, res) => {
+app.patch('/services/:id', verifyToken, verifyVendor, async (req, res) => {
   try {
     const id = req.params.id;
     if (!ObjectId.isValid(id)) {
