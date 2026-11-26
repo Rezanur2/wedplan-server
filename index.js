@@ -24,11 +24,9 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
     }
     event = stripe.webhooks.constructEvent(stripeEvent, signature, webhookSecret);
   } catch (error) {
-    console.log("Stripe webhook verification failed:", error.message);
+    console.error("Stripe webhook verification failed:", error.message);
     return res.status(400).send(`Webhook Error: ${error.message}`);
   }
-
-  console.log("Stripe event received:", event.type);
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
@@ -79,7 +77,6 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
             { $set: { isPremium: true } }
           );
         }
-        console.log("Vendor upgraded to premium successfully:", vendorId);
       }
     } catch (error) {
       console.error("Webhook database update error:", error);
@@ -464,7 +461,7 @@ app.get('/services', async (req, res) => {
   } else if (req.query.sort === 'price-high') {
     sortOption = { price: -1 };
   }
-  const cursor = services.find(query).sort(sortOption);
+  const cursor = services.find(query, { projection: { vendorEmail: 0 } }).sort(sortOption);
   const result = await cursor.toArray();
   res.send(result);
 });
@@ -552,6 +549,9 @@ app.post('/services', verifyToken, verifyRole(["vendor"]), async(req, res) => {
   service.price = Number(service.price);
   service.vendorId = req.userId;
   service.vendorEmail = req.user.email;
+  service.vendorName = req.user.name || "Verified Vendor";
+  service.businessName = req.user.businessName || req.user.name || "Wedding Specialist";
+  service.vendorAvatar = req.user.image || "";
   service.status = 'Pending';
   service.isAvailable = true;
   service.isPremium = isPremium;
@@ -788,3 +788,5 @@ app.use((err, req, res, next) => {
 app.listen(port, () => {
     console.log(`WedPlan is running on port ${port}`);
 })
+
+export default app;
