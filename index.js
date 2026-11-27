@@ -266,6 +266,16 @@ app.patch('/users/profile/sync', verifyToken, verifyRole(["vendor"]), async (req
   }
 });
 
+// Check whether a service's vendor is currently blocked
+const isVendorBlocked = async (vendorId) => {
+  if (!vendorId) return false;
+  const vendorQuery = ObjectId.isValid(vendorId)
+    ? { _id: new ObjectId(vendorId) }
+    : { _id: vendorId };
+  const vendorUser = await users.findOne(vendorQuery, { projection: { isBlocked: 1 } });
+  return Boolean(vendorUser?.isBlocked);
+};
+
 // Bookings Related APIs
 // Post Bookings
 app.post('/bookings', verifyToken, verifyRole(["customer"]), async (req, res) => {
@@ -293,6 +303,9 @@ app.post('/bookings', verifyToken, verifyRole(["customer"]), async (req, res) =>
     }
     if (service.isAvailable === false) {
       return res.status(400).send({ message: "This service is currently paused by the vendor" });
+    }
+    if (await isVendorBlocked(service.vendorId)) {
+      return res.status(400).send({ message: "This vendor is currently unavailable for booking" });
     }
 
     // Prevent customers from booking their own services
@@ -430,9 +443,15 @@ const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // Service Related APIs
 // Get Public Services (Browse Services - filtered by search, category, location, and sort)
 app.get('/services', async (req, res) => {
+  const blockedVendors = await users
+    .find({ isBlocked: true }, { projection: { _id: 1 } })
+    .toArray();
+  const blockedVendorIds = blockedVendors.map((vendorUser) => vendorUser._id.toString());
+
   const query = {
     status: { $in: ["Active", "active", "Approved", "approved"] },
-    isAvailable: {$ne: false},
+    isAvailable: { $ne: false },
+    ...(blockedVendorIds.length > 0 ? { vendorId: { $nin: blockedVendorIds } } : {}),
   };
 
   if (req.query) {
@@ -495,6 +514,9 @@ app.get('/services/:id', verifyToken, async (req, res) => {
     const isApproved = status === "active" || status === "approved";
     const isOwner = service.vendorId === req.userId;
     if (!isApproved && !isOwner && req.userRole !== "admin") {
+      return res.status(403).send({ message: "Forbidden: Service is not available" });
+    }
+    if (!isOwner && req.userRole !== "admin" && (await isVendorBlocked(service.vendorId))) {
       return res.status(403).send({ message: "Forbidden: Service is not available" });
     }
     res.send(service);
