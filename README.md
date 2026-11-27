@@ -19,7 +19,7 @@ Express.js (ES Modules) REST API server for **WedPlan**, handling MongoDB persis
 * **Role-Based Authorization (`verifyRole`):** Enforces strict server-side role permissions (`admin`, `vendor`, `customer`) and resource ownership validation on updates and deletions.
 * **Service Management & Free Tier Limits:** Enforces a maximum of 3 active/non-rejected services for free vendors, validates pricing/images, supports category/location/keyword filtering, and sorts by Premium priority or price (ascending/descending).
 * **Booking Rules & Validation:** Prevents booking unavailable/paused/unapproved services, blocks vendors from booking their own services, rejects past event dates, and prevents duplicate active bookings for the same service and date.
-* **Verified Stripe Checkout & Webhook Flow:** Creates Stripe Checkout sessions, verifies `stripe-signature` on `POST /api/webhooks/stripe` (`checkout.session.completed`) before activating Premium status and updating existing vendor services, and records read-only transaction receipts.
+* **Verified Stripe Monthly Subscriptions & Webhook Flow:** Creates recurring monthly (`$49/month`) Stripe Checkout sessions (`mode: 'subscription'`), records checkout attempts (`pending`, `paid`, `cancelled`), verifies `stripe-signature` on `POST /api/webhooks/stripe` (`checkout.session.completed`, `checkout.session.expired`, `customer.subscription.updated`, `customer.subscription.deleted`), automatically downgrades expired subscriptions, and supports period-end cancellation (`POST /subscriptions/cancel`).
 
 ---
 
@@ -89,7 +89,7 @@ The API server runs at `http://localhost:5000`.
 
 ### 5. Local Stripe Webhook testing (optional)
 ```bash
-stripe listen --events checkout.session.completed --forward-to localhost:5000/api/webhooks/stripe
+stripe listen --events checkout.session.completed,checkout.session.expired,customer.subscription.updated,customer.subscription.deleted --forward-to localhost:5000/api/webhooks/stripe
 ```
 
 ---
@@ -102,7 +102,7 @@ stripe listen --events checkout.session.completed --forward-to localhost:5000/ap
 
 ### Authenticated (All Valid Roles)
 * `GET /services/:id` — Service details (pending/paused listings restricted to owner or admin).
-* `GET /users/:id/premium` — Check vendor premium status.
+* `GET /users/:id/premium` — Check live vendor premium status, `subscriptionExpiresAt`, and `cancelAtPeriodEnd` (auto-downgrades expired subscriptions).
 * `GET /bookings` — Role-scoped bookings (customer's own, vendor's service bookings, or admin all bookings).
 * `PATCH /bookings/:id` — Vendor accepts/rejects or customer cancels a pending booking.
 
@@ -116,15 +116,18 @@ stripe listen --events checkout.session.completed --forward-to localhost:5000/ap
 * `PATCH /services/:id` — Update service details or availability (also accessible by admin for moderation).
 * `DELETE /services/:id` — Delete service (also accessible by admin).
 * `PATCH /users/profile/sync` — Sync updated vendor profile info to existing services.
-* `POST /create-checkout-session` — Create Stripe Checkout session for Premium upgrade.
-* `POST /transactions/checkout-verify` — Read-only verification of completed Stripe Checkout session.
+* `POST /create-checkout-session` — Create Stripe Monthly Subscription Checkout session (`$49/month`) and record a `pending` transaction.
+* `POST /transactions/checkout-verify` — Read-only verification of completed Stripe Checkout session for the Success page.
+* `POST /transactions/checkout-cancel` — Verify unpaid checkout cancellation with Stripe and update pending attempts to `cancelled`.
+* `GET /transactions/my` — Fetch the logged-in vendor's recent payment history (omitting Stripe session/subscription IDs).
+* `POST /subscriptions/cancel` — Schedule monthly subscription cancellation at the end of the current billing period (`cancel_at_period_end: true`).
 
 ### Admin Only
 * `GET /users` — List all registered users.
 * `PATCH /users/:id/role` — Update user role and invalidate active sessions.
 * `PATCH /users/:id/block` — Block or unblock user and invalidate active sessions on block.
 * `GET /admin/services` — List all submitted services for review.
-* `GET /admin/transactions` — List verified platform transactions enriched with vendor info.
+* `GET /admin/transactions` — List all platform transactions enriched with vendor name, email, and avatar image.
 
 ### Stripe Webhook
-* `POST /api/webhooks/stripe` — Verifies `stripe-signature`, records transaction, upgrades vendor to Premium, and marks vendor services as `isPremium: true`.
+* `POST /api/webhooks/stripe` — Verifies `stripe-signature` and handles `checkout.session.completed`, `checkout.session.expired`, `customer.subscription.updated`, and `customer.subscription.deleted` to sync transactions, expiry dates, and vendor/service Premium flags.
