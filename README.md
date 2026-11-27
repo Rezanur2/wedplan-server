@@ -1,40 +1,40 @@
-# WedPlan — Backend API Server
+# WedPlan — Wedding Planning Platform (Server)
 
-Express.js (ES Modules) REST API server for **WedPlan**, handling MongoDB persistence, Better Auth JWKS JWT verification, role-based access control, booking validation, and Stripe Checkout + Webhook verification.
+Express.js (ES Modules) REST API backend for **WedPlan**, handling MongoDB persistence (`wedplandb`), Better Auth JWKS JWT verification, role-based access control, service and booking validation, profile syncing, and **Stripe Checkout + Webhook** verification for monthly Premium vendor subscriptions.
 
 ---
 
-## 🔗 Live & Repository Links
+## Live Website & Repository Links
 
 * **Live API Server:** [https://wedplan-server-orpin.vercel.app](https://wedplan-server-orpin.vercel.app)
-* **Live Website:** [https://wedplan-client-cyan.vercel.app](https://wedplan-client-cyan.vercel.app)
+* **Live Website Link:** [https://wedplan-client-cyan.vercel.app](https://wedplan-client-cyan.vercel.app)
 * **Server Repository:** [https://github.com/Rezanur2/wedplan-server](https://github.com/Rezanur2/wedplan-server)
 * **Client Repository:** [https://github.com/Rezanur2/wedplan-client](https://github.com/Rezanur2/wedplan-client)
 
 ---
 
-## ✨ Important Features
+## Important Features
 
-* **JWKS JWT Authentication (`verifyToken`):** Verifies incoming Bearer JWT tokens against Better Auth's `/api/auth/jwks` endpoint using `jose` (`createRemoteJWKSet` & `jwtVerify`) and checks blocked account status on every protected request.
+* **JWKS JWT Authentication (`verifyToken`):** Verifies incoming Bearer JWT tokens against Better Auth's `/api/auth/jwks` endpoint using `jose` (`createRemoteJWKSet` & `jwtVerify`) and rejects requests from invalid tokens or blocked accounts (`401`/`403`).
 * **Role-Based Authorization (`verifyRole`):** Enforces strict server-side role permissions (`admin`, `vendor`, `customer`) and resource ownership validation on updates and deletions.
-* **Service Management & Free Tier Limits:** Enforces a maximum of 3 active/non-rejected services for free vendors, validates pricing/images, supports category/location/keyword filtering, and sorts by Premium priority or price (ascending/descending).
+* **Service Management & Free Tier Limits:** Enforces a maximum of 3 non-rejected services for Free vendors, validates pricing and image URLs, supports search/category/location filtering, and sorts by Premium priority or price (`price-low` / `price-high`).
 * **Booking Rules & Validation:** Prevents booking unavailable/paused/unapproved services, blocks vendors from booking their own services, rejects past event dates, and prevents duplicate active bookings for the same service and date.
 * **Verified Stripe Monthly Subscriptions & Webhook Flow:** Creates recurring monthly (`$49/month`) Stripe Checkout sessions (`mode: 'subscription'`), records checkout attempts (`pending`, `paid`, `cancelled`), verifies `stripe-signature` on `POST /api/webhooks/stripe` (`checkout.session.completed`, `checkout.session.expired`, `customer.subscription.updated`, `customer.subscription.deleted`), automatically downgrades expired subscriptions, and supports period-end cancellation (`POST /subscriptions/cancel`).
 
 ---
 
-## 🛠️ Technology Stack
+## Technology Stack
 
-* **Runtime:** Node.js
-* **Framework:** Express.js 5 (ES Modules)
+* **Runtime:** Node.js (ES Modules)
+* **Framework:** Express.js 5 (`express`)
 * **Database:** MongoDB (`mongodb` native driver)
 * **Authentication / JWT:** `jose` (Remote JWKS verification for Better Auth JWTs)
 * **Payments:** Stripe Node SDK (`stripe`)
-* **Utilities:** `cors`, `dotenv`
+* **Middleware & Utilities:** `cors`, `dotenv`
 
 ---
 
-## 🗄️ Database Architecture (`wedplandb`)
+## Database Architecture (`wedplandb`)
 
 * **`user`:** Managed with Better Auth (`name`, `email`, `image`, `role`, `isBlocked`, `businessName`, `subscriptionPlan`, `subscriptionExpiresAt`).
 * **`services`:** Vendor listings (`vendorId`, `serviceName`, `category`, `description`, `price`, `location`, `images`, `status`, `isAvailable`, `isPremium`, `createdAt`).
@@ -43,58 +43,70 @@ Express.js (ES Modules) REST API server for **WedPlan**, handling MongoDB persis
 
 ---
 
-## 📋 Environment Variables
+## Installation Instructions
 
-Create a `.env` file in the root of `wedplan-server` (never commit `.env` or secret keys):
+### Prerequisites
+* **Node.js** `v20+` and `npm`
+* **MongoDB** connection string (`wedplandb`)
+* **Stripe** Test Mode secret key and webhook signing secret
 
+### 1. Clone Both Repositories
+```bash
+git clone https://github.com/Rezanur2/wedplan-server.git
+git clone https://github.com/Rezanur2/wedplan-client.git
+```
+
+### 2. Install Dependencies
+```bash
+cd wedplan-server
+npm install
+```
+*(Also run `npm install` inside `wedplan-client` if running the full stack locally.)*
+
+### 3. Configure Environment Variables
+Create a `.env` file in the root of `wedplan-server/` using [`.env.example`](./.env.example) as a reference (never commit `.env`):
 ```env
 # MongoDB Connection String
 MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.mongodb.net/wedplandb
 
-# Stripe Credentials
+# Server Port
+PORT=5000
+
+# Stripe Secret Key & Webhook Secret
 STRIPE_SECRET_KEY=sk_test_your_stripe_secret_key
 STRIPE_WEBHOOK_SECRET=whsec_your_stripe_webhook_secret
 
-# Client Application URL (for JWKS JWT verification & Stripe redirects, no trailing slash)
+# Frontend Client Origin (for CORS, JWKS, and Stripe redirects — no trailing slash)
 CLIENT_URL=http://localhost:3000
-
-# Optional Local Server Port (defaults to 5000)
-PORT=5000
 ```
 
 ---
 
-## 🚀 Installation & Local Setup
+## How to Run the Project Locally
 
-### 1. Clone the repository
+### 1. Start the Backend Server
 ```bash
-git clone https://github.com/Rezanur2/wedplan-server.git
 cd wedplan-server
-```
-
-### 2. Install dependencies
-```bash
-npm install
-```
-
-### 3. Configure environment variables
-Create a `.env` file using the template above.
-
-### 4. Start the server
-```bash
 npm start
 ```
+The API server runs at `http://localhost:5000` (health check available at `GET /`).
 
-The API server runs at `http://localhost:5000`.
+### 2. Start the Frontend Client (in another terminal)
+```bash
+cd wedplan-client
+npm run dev
+```
+The Next.js client runs at `http://localhost:3000`.
 
-### 5. Local Stripe Webhook testing (optional)
+### 3. Test Stripe Webhooks Locally (Optional)
 ```bash
 stripe listen --events checkout.session.completed,checkout.session.expired,customer.subscription.updated,customer.subscription.deleted --forward-to localhost:5000/api/webhooks/stripe
 ```
+Paste the CLI webhook secret into `wedplan-server/.env` as `STRIPE_WEBHOOK_SECRET` and restart the server.
 
 ---
 
-## 📡 API Endpoints Overview
+## API Endpoints Overview
 
 ### Public
 * `GET /` — Health check message.
